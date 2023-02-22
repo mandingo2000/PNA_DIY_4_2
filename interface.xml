@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <http:listener-config name="accounts-api-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+    <apikit:config name="accounts-api-config" api="resource::78ca250d-cf28-4e97-9bbf-4f38b4e3aeb9:diy-accounts-api:1.0.0:raml:zip:accounts-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+    <db:config name="Database_Config" doc:name="Database Config" doc:id="849bb00f-ab48-497a-b7c4-9f8dab1f3eb1" >
+		<db:generic-connection url="jdbc:mysql://mudb.learn.mulesoft.com:3306/training?user=mule&amp;password=mule" driverClassName="com.mysql.cj.jdbc.Driver" />
+	</db:config>
+	<flow name="get-accounts" doc:id="41d4a50f-6f64-49ce-b5cb-8e7e28a54345">
+		<db:select doc:name="flights_customers" doc:id="83242ae4-7f02-46b0-b307-5e1ab35a8258" config-ref="Database_Config">
+			<db:sql><![CDATA[SELECT * FROM flights_customers]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="0e5374a8-e8d3-437e-99a0-b330299a8af5">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map ( payload , indexOfpayload ) -> {
+	id: payload.accountID as Number default 0,
+	name: payload.name default "",
+	street: payload.street default "",
+	city: payload.city default "",
+	state: payload.state default "",
+	postal: payload.postal default "",
+	country: payload.country default "",
+	accountstype: payload.accountType default "",
+	creationdate: payload.creationDate as Date default "",
+	miles: payload.miles as Number default 0
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="get-accounts-by-id" doc:id="bf66f33d-ddd2-4795-b7cc-04bec2431cda" >
+		<db:select doc:name="customers by ID" doc:id="252f0793-9a1f-4b04-a586-2f8770bc17d0" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM flights_customers WHERE accountID = :id]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="01692eb5-c406-475c-b211-3d5f6ed8dad0" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map ( payload , indexOfpayload ) -> {
+	id: payload.accountID as Number default 0,
+	name: payload.name default "",
+	"type": payload.accountType default "",
+	address: ((((payload.street default "") ++ "," ++ (payload.city default "")) ++ "," ++ (payload.state default "")) ++ "," ++ (payload.postal default "")) ++ "," ++ (payload.country default ""),
+	air_miles: payload.miles default 0,
+	created_at: payload.creationDate as String default ""
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="post-accounts">
+        <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Accounts created"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+	<flow name="accounts-api-main">
+        <http:listener config-ref="accounts-api-httpListenerConfig" path="/api/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="accounts-api-config" />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="889cf2ad-2249-4b32-bf83-87ce5cdb1a63" type="APIKIT:NOT_FOUND">
+				<ee:transform doc:name="Transform Message" doc:id="73f8a2dc-3952-4cf5-834e-093e6e85d9ed" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	message: "404 not found"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+    </flow>
+	<flow name="accounts-api-console">
+        <http:listener config-ref="accounts-api-httpListenerConfig" path="/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:console config-ref="accounts-api-config" />
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="404 Not found" doc:id="8187bc27-52cb-4fee-8e05-6b26eedccf65" type="APIKIT:NOT_FOUND">
+				<ee:transform doc:name="Transform Message" doc:id="a7837f7a-8c6c-4fdd-8c33-4ed4d036a789" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Account not found"}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+    </flow>
+</mule>
